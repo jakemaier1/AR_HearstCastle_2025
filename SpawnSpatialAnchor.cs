@@ -1,13 +1,12 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.InputSystem;
 using System.IO;
-using UnityEngine.XR.OpenXR.Input;
 using Pose = UnityEngine.Pose;
 using System;
+using Meta.XR.MRUtilityKit;
+using OVRSimpleJSON;
 
 public class SpawnAnchorFromRayInteract : MonoBehaviour
 {
@@ -16,6 +15,8 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
     public GameObject prefab;
     public InputActionProperty input;
     private int numAnchors = 0;
+    private List<AnchorData> savedAnchors = new();
+    
 
 
     // Serializable class to track name, position and rotation of spawned anchor, will be stored in persistentDataPath
@@ -23,10 +24,19 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
     public class AnchorData
     {
         public string id;
+        public string parent;
         public float posX, posY, posZ, rotX, rotY, rotZ,rotW;
-        public AnchorData(string name, float pX, float pY, float pZ, float rX, float rY, float rZ, float rW)
+        public AnchorData(string name, string anchor, float pX, float pY, float pZ, float rX, float rY, float rZ, float rW)
         {
-            id = name; posX = pX; posY = pY; posZ = pZ; rotX = rX; rotY = rY; rotZ = rZ; rotW = rW;
+            id = name; parent = anchor;
+            posX = pX; posY = pY; posZ = pZ;
+            rotX = rX; rotY = rY; rotZ = rZ; rotW = rW;
+        }
+        public AnchorData(string name, string anchor, Vector3 localPos, Quaternion localRot)
+        {
+            id = name; parent = anchor;
+            posX = localPos.x; posY = localPos.y; posZ = localPos.z;
+            rotX = localRot.x; rotY = localRot.y; rotZ = localRot.z; rotW = localRot.w;
         }
     }
 
@@ -52,8 +62,10 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
         string anchorPath = Path.Combine(Application.persistentDataPath, "anchors.json");
         if (File.Exists(anchorPath))
         {
-            jsonToAnchor(File.ReadAllText(anchorPath));
+            // Spawn all saved anchors relative to Scene Anchors
+            spawnSavedAnchors(GameObject.FindObjectsOfType<MRUKAnchor>(), File.ReadAllText(anchorPath));
         }
+        
     }
 
     private void Update()
@@ -62,6 +74,11 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
         {
             SpawnAnchor();
         }
+    }
+
+    private void OnApplicationQuit()
+    {
+        saveAnchorData(savedAnchors);
     }
 
     public void SpawnAnchor()
@@ -85,29 +102,49 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
             // Add ARAnchor component if necessary
             spawned.AddComponent<ARAnchor>();
 
-            // Put position and rotation of anchor into json format
-            string jsonString = anchorToJson("ReferencePoint",spawned.GetComponent<ARAnchor>().transform);
+            // Find the Meta Room Scan Anchor that the spatial anchor is attached to
+            MRUKAnchor parentAnchor = hit.collider.GetComponentInParent<MRUKAnchor>();
 
-            // Get file path for session and reboot transcendent file directory
-            string path = Path.Combine(Application.persistentDataPath,"anchors.json");
+            // Convert ARAnchor to serializable object
+            AnchorData anchorData = extractAnchorData(spawned, parentAnchor);
 
-            // Store anchor position and rotation in directory
-            File.WriteAllText(path,jsonString); 
+            // Add ARAnchor to array list
+            savedAnchors.Add(anchorData);
         }
     }
 
-    public string anchorToJson(string name, Transform transform)
+    // Compile all saved anchors into array list and store in persistent directory
+    public void saveAnchorData(List<AnchorData> savedAnchors)
     {
-        // Var tracking num of anchors created, helps with naming
-        name += ++numAnchors;
+        foreach (AnchorData anchor in savedAnchors)
+        {
+            // Convert list of AnchorData objects to json string
+            string jsonString = JsonUtility.ToJson(savedAnchors);
 
-        // Create serializable object for storing anchor position and orientation
-        AnchorData anchor = new(name+numAnchors, transform.position.x, transform.position.y, transform.position.z, transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+            // Get file path for persistent anchor directory
+            string path = Path.Combine(Application.persistentDataPath, "anchors.json");
 
-        // Serialize to JSON
-        return JsonUtility.ToJson(anchor,true);
+            // Store all Anchor Data objects in persistent directory
+            File.WriteAllText(path, jsonString);
+        }
     }
-    public void jsonToAnchor(string json)
+
+    // Take in spawned spatial anchor and parent Scene Anchor, create json serializable object
+    public AnchorData extractAnchorData(GameObject anchor, MRUKAnchor parent)
+    {
+        // Name anchor with unique number
+        string id = $"Anchor{++numAnchors}";
+
+        // Get local transform of spatial anchor in reference to Scene Anchor
+        Vector3 localPos = parent.transform.InverseTransformPoint(anchor.transform.position);
+        Quaternion localRot = Quaternion.Inverse(parent.transform.rotation) * anchor.transform.rotation;
+
+        // Return serializable object for storing anchor position and orientation
+        return new(id, parent.name, localPos, localRot);
+    }
+
+    // Spawn all spatial anchors from stored json relative to their associated Scene Anchor
+    public void spawnSavedAnchors(MRUKAnchor[] sceneAnchors, string json)
     {
         // Convert json to list of AnchorData objects
         List<AnchorData> anchorList = JsonUtility.FromJson<AnchorList>(json).anchorList;
@@ -116,13 +153,18 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
         foreach (AnchorData anchor in anchorList)
         {
             // Retrieve position and orientation data from stored object
-            Vector3 savedPos = new(anchor.posX,anchor.posY,anchor.posZ);
-            Quaternion savedRot = new(anchor.rotW,anchor.rotX,anchor.rotY,anchor.rotZ);
-
-            // Instatiate each anchor in list
-            GameObject anchorSaved = Instantiate(prefab, savedPos, savedRot);
-            anchorSaved.gameObject.name = anchor.id;
-            anchorSaved.GetComponent<ARAnchor>();
+            Vector3 savedPos = new(anchor.posX, anchor.posY, anchor.posZ);
+            Quaternion savedRot = new(anchor.rotW, anchor.rotX, anchor.rotY, anchor.rotZ);
+            foreach (MRUKAnchor sceneAnchor in sceneAnchors)
+            {
+                if (sceneAnchor.name == anchor.id)
+                {
+                    // Instatiate each anchor in list
+                    GameObject anchorSaved = Instantiate(prefab, sceneAnchor.transform.TransformPoint(savedPos), sceneAnchor.transform.rotation * savedRot);
+                    anchorSaved.name = anchor.id;
+                    anchorSaved.GetComponent<ARAnchor>();
+                }
+            }
         }
     }
 }
