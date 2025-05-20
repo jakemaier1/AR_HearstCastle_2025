@@ -7,6 +7,7 @@ using UnityEngine.InputSystem;
 using System.IO;
 using UnityEngine.XR.OpenXR.Input;
 using Pose = UnityEngine.Pose;
+using System;
 
 public class SpawnAnchorFromRayInteract : MonoBehaviour
 {
@@ -29,13 +30,29 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
         }
     }
 
+    // Serializable class to store multiple anchor objects
+    [System.Serializable]
+    public class AnchorList
+    {
+        public List<AnchorData> anchorList;
+        public AnchorList (List<AnchorData> list)
+        {
+            anchorList = list;
+        }
+        // This part was added automatically, don't know what it is
+        public static explicit operator List<object>(AnchorList v)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     private void Start()
     {
-        // Convert 
-        File.ReadAllText(Path.Combine(Application.persistentDataPath, "anchors.json"));
-        if () //check if any anchors exist in persistentDataPath
+        // Check if there are any saved anchors
+        string anchorPath = Path.Combine(Application.persistentDataPath, "anchors.json");
+        if (File.Exists(anchorPath))
         {
-             // Use this somehow?
+            jsonToAnchor(File.ReadAllText(anchorPath));
         }
     }
 
@@ -89,5 +106,23 @@ public class SpawnAnchorFromRayInteract : MonoBehaviour
 
         // Serialize to JSON
         return JsonUtility.ToJson(anchor,true);
+    }
+    public void jsonToAnchor(string json)
+    {
+        // Convert json to list of AnchorData objects
+        List<AnchorData> anchorList = JsonUtility.FromJson<AnchorList>(json).anchorList;
+
+        // Iterate through AnchorData objects
+        foreach (AnchorData anchor in anchorList)
+        {
+            // Retrieve position and orientation data from stored object
+            Vector3 savedPos = new(anchor.posX,anchor.posY,anchor.posZ);
+            Quaternion savedRot = new(anchor.rotW,anchor.rotX,anchor.rotY,anchor.rotZ);
+
+            // Instatiate each anchor in list
+            GameObject anchorSaved = Instantiate(prefab, savedPos, savedRot);
+            anchorSaved.gameObject.name = anchor.id;
+            anchorSaved.GetComponent<ARAnchor>();
+        }
     }
 }
