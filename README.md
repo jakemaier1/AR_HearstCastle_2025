@@ -10,11 +10,19 @@ Repository for code from Hearst Castle AR Research Project, being featured in fu
     - Behind the scenes management of children components
 - Storing and retrieving anchors as JSON object to persist them across sessions
 #### Functions
-- SpawnAnchor() - On button press, instantiate prefab at raycast hit. Add Rigidbody and AR Anchor components to object, add anchor to cross-session directory.
-- anchorToJson() - Converts anchor into serializable object, then converts to JSON string format to be stored
-- Update() [C# Default] - Check if button was pressed once per frame, spawn anchor if pressed
 - Start() [C# Default] - Retrieve cross-session directory data, spawn any stored/persisted anchors
-- jsonToAnchor() - Extracts data from json string, instantiates saved AR Anchors
+- Update() [C# Default] - Check if button was pressed once per frame, spawn anchor if pressed
+- OnApplicationQuit() [C# Default] - Flush/save anchor data to persistent directory when application closes
+- SpawnAnchor()
+    - On button press, instantiate prefab at raycast hit
+    - Add Rigidbody and AR Anchor components to object
+    - Find anchor's Scene Anchor parent
+    - Convert anchor to serializable object
+    - Add to session's array of anchor objects
+- extractAnchorData() - Take in spawned spatial anchor and parent Scene Anchor, create json serializable object
+- saveAnchorData() - Serialize array list of saved anchors into json string and store in persistent directory
+- spawnSavedAnchors() - Retrieve all spatial anchors from stored json, spawn relative to their associated Scene Anchor
+
 #### Future Additions
-- Store all spawned anchors in an array, only serialize and flush to persistentDataPath on application close
-- Add functionality to delete and edit the position of anchors (much easier with above alteration)
+- When stored anchors are spawned, add them to this session's anchor list
+- Add functionality to delete and edit the position of anchors
