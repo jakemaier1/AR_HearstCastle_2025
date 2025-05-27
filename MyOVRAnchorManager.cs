@@ -8,10 +8,9 @@ using System;
 using Meta.XR.MRUtilityKit;
 using Newtonsoft.Json;
 
-public class SpawnSpatialAnchor : MonoBehaviour
+public class MyOVRAnchorManager : MonoBehaviour
 {
     public UnityEngine.XR.Interaction.Toolkit.Interactors.XRRayInteractor rayInteractor;
-    public ARAnchorManager anchorManager;
     public GameObject prefab;
     public InputActionProperty input;
     private int numAnchors = 0;
@@ -59,12 +58,12 @@ public class SpawnSpatialAnchor : MonoBehaviour
     private void Start()
     {
         // Check if there are any saved anchors
-        string anchorPath = Path.Combine(Application.persistentDataPath, "anchors.json");
+        /*string anchorPath = Path.Combine(Application.persistentDataPath, "anchors.json");
         if (File.Exists(anchorPath))
         {
             // Spawn all saved anchors relative to Scene Anchors
             spawnSavedAnchors(GameObject.FindObjectsOfType<MRUKAnchor>(), File.ReadAllText(anchorPath));
-        }
+        }*/
         
     }
 
@@ -78,7 +77,7 @@ public class SpawnSpatialAnchor : MonoBehaviour
 
     private void OnApplicationQuit()
     {
-        saveAnchorData(savedAnchors);
+        //saveAnchorData(savedAnchors);
     }
 
     public void SpawnAnchor()
@@ -91,7 +90,7 @@ public class SpawnSpatialAnchor : MonoBehaviour
             // Create a new pose for the hit point with the adjusted rotation
             Pose hitPose = new(hit.point, rotation);
 
-            // Instantiate the prefab at the hit pose position and rotation
+            // Instantiate the prefab at the hit pose position and rotation - 
             GameObject spawned = Instantiate(prefab, hitPose.position, hitPose.rotation);
 
             spawned.transform.Rotate(90, 0, 0);
@@ -99,8 +98,9 @@ public class SpawnSpatialAnchor : MonoBehaviour
             // Ensure the rigidbody is properly attached if needed
             Rigidbody cubeRigidbody = spawned.GetComponent<Rigidbody>();
 
-            // Add ARAnchor component if necessary
-            spawned.AddComponent<ARAnchor>();
+            // Add ARAnchor component
+            spawned.GetComponent<OVRAnchor>();
+            spawned.RequestAnchor();
 
             // Find the Meta Room Scan Anchor that the spatial anchor is attached to
             MRUKAnchor parentAnchor = hit.collider.GetComponentInParent<MRUKAnchor>();
