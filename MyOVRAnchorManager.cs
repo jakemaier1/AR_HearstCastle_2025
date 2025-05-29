@@ -1,12 +1,10 @@
 using System.Collections.Generic;
+using System;
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.InputSystem;
 using System.IO;
 using Pose = UnityEngine.Pose;
-using System;
-using Meta.XR.MRUtilityKit;
-using Newtonsoft.Json;
 
 public class MyOVRAnchorManager : MonoBehaviour
 {
@@ -14,28 +12,20 @@ public class MyOVRAnchorManager : MonoBehaviour
     public GameObject prefab;
     public InputActionProperty input;
     private int numAnchors = 0;
-    private List<AnchorData> savedAnchors = new();
+    private List<OVRSpatialAnchor> savedAnchors = new();
     
 
 
-    // Serializable class to track name, position and rotation of spawned anchor, will be stored in persistentDataPath
+    // Serializable class to track name and persistent id of OVR anchor
     [System.Serializable]
     public class AnchorData
     {
         public string id;
-        public string parent;
-        public float posX, posY, posZ, rotX, rotY, rotZ,rotW;
-        public AnchorData(string name, string anchor, float pX, float pY, float pZ, float rX, float rY, float rZ, float rW)
+        public string Uuid;
+        public AnchorData(string name, string uuid)
         {
-            id = name; parent = anchor;
-            posX = pX; posY = pY; posZ = pZ;
-            rotX = rX; rotY = rY; rotZ = rZ; rotW = rW;
-        }
-        public AnchorData(string name, string anchor, Vector3 localPos, Quaternion localRot)
-        {
-            id = name; parent = anchor;
-            posX = localPos.x; posY = localPos.y; posZ = localPos.z;
-            rotX = localRot.x; rotY = localRot.y; rotZ = localRot.z; rotW = localRot.w;
+            id = name;
+            Uuid = uuid;
         }
     }
 
@@ -58,13 +48,12 @@ public class MyOVRAnchorManager : MonoBehaviour
     private void Start()
     {
         // Check if there are any saved anchors
-        /*string anchorPath = Path.Combine(Application.persistentDataPath, "anchors.json");
+        string anchorPath = Path.Combine(Application.persistentDataPath, "anchors.json");
         if (File.Exists(anchorPath))
         {
-            // Spawn all saved anchors relative to Scene Anchors
-            spawnSavedAnchors(GameObject.FindObjectsOfType<MRUKAnchor>(), File.ReadAllText(anchorPath));
-        }*/
-        
+            // Load and spawn all stored OVR Anchors
+            spawnSavedAnchors(File.ReadAllText(anchorPath));
+        }   
     }
 
     private void Update()
@@ -77,50 +66,44 @@ public class MyOVRAnchorManager : MonoBehaviour
 
     private void OnApplicationQuit()
     {
-        //saveAnchorData(savedAnchors);
+        saveAnchorData();
     }
 
     public void SpawnAnchor()
     {
         if (rayInteractor.TryGetCurrent3DRaycastHit(out RaycastHit hit))
         {
-            // Adjust the rotation to align with the hit surface normal
+            // Store hitpoint of raycast as a Pose
             Quaternion rotation = Quaternion.LookRotation(hit.normal, Vector3.up);
-
-            // Create a new pose for the hit point with the adjusted rotation
             Pose hitPose = new(hit.point, rotation);
 
-            // Instantiate the prefab at the hit pose position and rotation - 
+            // Instantiate the prefab at the hit pose position and rotation
             GameObject spawned = Instantiate(prefab, hitPose.position, hitPose.rotation);
-
             spawned.transform.Rotate(90, 0, 0);
 
-            // Ensure the rigidbody is properly attached if needed
-            Rigidbody cubeRigidbody = spawned.GetComponent<Rigidbody>();
+            // Add OVR Anchor component
+            OVRSpatialAnchor anchor = spawned.AddComponent<OVRSpatialAnchor>();
 
-            // Add ARAnchor component
-            spawned.GetComponent<OVRAnchor>();
-            spawned.RequestAnchor();
-
-            // Find the Meta Room Scan Anchor that the spatial anchor is attached to
-            MRUKAnchor parentAnchor = hit.collider.GetComponentInParent<MRUKAnchor>();
-
-            // Convert ARAnchor to serializable object
-            AnchorData anchorData = extractAnchorData(spawned, parentAnchor);
-
-            // Add ARAnchor to array list
-            savedAnchors.Add(anchorData);
+            // Add anchor to session's arrayList
+            savedAnchors.Add(anchor);
         }
     }
+    
 
-    // Serialize array list of saved anchors into json string and store in persistent directory
-    public void saveAnchorData(List<AnchorData> savedAnchors)
+    // Save UUIDs of anchors and serialize into json string to store in persistent directory
+    public void saveAnchorData()
     {
-        // Convert list of AnchorData objects to serializable array object
-        AnchorList anchorList = new(savedAnchors);
+        // Save/Persist all UUIDs in session array list
+        OVRSpatialAnchor.SaveAnchorsAsync(savedAnchors); // ADD AWAIT() AND ERROR HANDLING HERE
+
+        // Serialize each anchor in session array list
+        List<AnchorData> serialAnchorList = new();
+        foreach (OVRSpatialAnchor anchor in savedAnchors) {
+            serialAnchorList.Add(extractAnchorData(anchor));
+        }
 
         // Serialize array object to json string
-        string jsonString = JsonUtility.ToJson(anchorList);
+        string jsonString = JsonUtility.ToJson(serialAnchorList);
 
         // Get file path for persistent anchor directory
         string path = Path.Combine(Application.persistentDataPath, "anchors.json");
@@ -129,42 +112,49 @@ public class MyOVRAnchorManager : MonoBehaviour
         File.WriteAllText(path, jsonString);
     }
 
-    // Take in spawned spatial anchor and parent Scene Anchor, create json serializable object
-    public AnchorData extractAnchorData(GameObject anchor, MRUKAnchor parent)
+    // Take in spawned spatial anchor, return json serializable object
+    public AnchorData extractAnchorData(OVRSpatialAnchor anchor)
     {
         // Name anchor with unique number
         string id = $"Anchor{++numAnchors}";
-
-        // Get local transform of spatial anchor in reference to Scene Anchor
-        Vector3 localPos = parent.transform.InverseTransformPoint(anchor.transform.position);
-        Quaternion localRot = Quaternion.Inverse(parent.transform.rotation) * anchor.transform.rotation;
-
+        string uuid = anchor.Uuid.ToString() ;
         // Return serializable object for storing anchor position and orientation
-        return new(id, parent.name, localPos, localRot);
+        return new(id, uuid);
     }
 
-    // Retrieve all spatial anchors from stored json, spawn relative to their associated Scene Anchor
-    public void spawnSavedAnchors(MRUKAnchor[] sceneAnchors, string json)
+    // Retrieve all spatial anchors from stored json, spawn according to loaded/associated UUID
+    public async void spawnSavedAnchors(string json)
     {
         // Convert json to list of AnchorData objects
         List<AnchorData> anchorList = JsonUtility.FromJson<AnchorList>(json).anchorList;
 
-        // Iterate through AnchorData objects
-        foreach (AnchorData anchor in anchorList)
+        // Extract UUIDS into list and UUIDs+Names into dictionary
+        List<Guid> uuids = new();
+        Dictionary<Guid, string> anchorIdPairs = new();
+        foreach (AnchorData ad in anchorList)
         {
-            // Retrieve position and orientation data from stored object
-            Vector3 savedPos = new(anchor.posX, anchor.posY, anchor.posZ);
-            Quaternion savedRot = new(anchor.rotW, anchor.rotX, anchor.rotY, anchor.rotZ);
-            foreach (MRUKAnchor sceneAnchor in sceneAnchors)
+            Guid uuid = Guid.Parse(ad.Uuid);
+            uuids.Add(uuid);
+            anchorIdPairs[uuid] = ad.id;
+        }
+
+        // Load all persistent OVR Anchor info
+        List<OVRSpatialAnchor.UnboundAnchor> _unboundAnchors = new();
+        var result = await OVRSpatialAnchor.LoadUnboundAnchorsAsync(uuids,_unboundAnchors);
+
+        // If loaded successfully, localize all unbound anchors, bind to newly instantiated OVRAnchor
+        if (result.Success) {
+            foreach (var unbound in result.Value)
             {
-                if (sceneAnchor.name == anchor.id)
+                var localized = await unbound.LocalizeAsync();
+                if (localized)
                 {
-                    // Instatiate each anchor in list
-                    GameObject anchorSaved = Instantiate(prefab, sceneAnchor.transform.TransformPoint(savedPos), sceneAnchor.transform.rotation * savedRot);
-                    anchorSaved.name = anchor.id;
-                    anchorSaved.GetComponent<ARAnchor>();
+                    OVRSpatialAnchor anchor = new GameObject(anchorIdPairs[unbound.Uuid]).AddComponent<OVRSpatialAnchor>();
+                    unbound.BindTo(anchor);
                 }
+                else { Debug.Log($"Localization Failed for: {unbound.Uuid}");}
             }
         }
+        else { Debug.Log("Load Failed");}
     }
 }
