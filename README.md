@@ -2,8 +2,9 @@
 Repository for code from Hearst Castle AR Research Project, being featured in future exhibit
 
 ## Files
-*IMPORTANT DIFFERENCE:* SpawnSpatialAnchor.cs is before and MyOVRAnchorManager is after MRUK/OVR Refactor
-### MyOVRAnchorManager.cs
+*IMPORTANT DIFFERENCE:* 
+SpawnSpatialAnchor.cs is before and MyOVRAnchorManager.cs is after MRUK/OVR Refactor
+### <u>MyOVRAnchorManager.cs<u>
 #### Features
 - C# file containing all logic for spatial anchors
 - Ability to spawn anchors using ray interactor
@@ -32,7 +33,7 @@ Repository for code from Hearst Castle AR Research Project, being featured in fu
 - Add functionality to delete and edit the position of anchors
 
 
-### SpawnSpatialAnchor.cs
+### <u>SpawnSpatialAnchor.cs<u>
 #### Features
 - C# file containing all logic for spatial anchors
 - Ability to spawn anchors using ray interactor
